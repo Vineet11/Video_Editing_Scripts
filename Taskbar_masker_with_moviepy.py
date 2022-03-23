@@ -21,6 +21,10 @@ from moviepy.editor import VideoFileClip
 from moviepy.editor import AudioFileClip
 
 
+## User parameters
+input_video_path = 'Sample_video/zoom_0.mp4'
+ref_taskbar_img_path = 'Sample_video/Taskbar_ref.JPG'
+
 ## Function to detect mask
 def detectTaskbarAndApplyMask(frame, ref_taskbar_image):
     ### Empirical values
