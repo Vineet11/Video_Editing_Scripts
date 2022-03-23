@@ -23,18 +23,31 @@ from moviepy.editor import AudioFileClip
 
 ## User parameters
 # TODO: Make this a arg-parser or similar
-input_video_path = 'Sample_video/zoom_0.mp4'
-ref_taskbar_img_path = 'Sample_video/Taskbar_ref.JPG'
-output_video_path = 'Sample_video/moviepy_edited_video.mp4'
+# For test 1
+# input_video_path = 'Sample_video/zoom_0.mp4'
+# ref_taskbar_img_path = 'Sample_video/Taskbar_ref.JPG'
+# output_video_path = 'Sample_video/moviepy_edited_video.mp4'
+# start_time = 120 # in seconds
+# end_time = 141 # in seconds
+# taskbar_height = 40 # in pixels
+# match_width = 50 # in pixels
+
+# For test 2
+input_video_path = 'Test2/orig_recording/video1482971547.mp4'
+ref_taskbar_img_path = 'Test2/orig_recording/ref_window_capture.png'
+output_video_path = 'Test2/edited_video.mp4'
+start_time = 0 # in seconds
+end_time = 10**6 # in seconds
+taskbar_height = 60 # in pixels
+match_width = 75 # in pixels
 
 ## Function to detect mask
 def detectTaskbarAndApplyMask(frame, ref_taskbar_image):
     '''
-    #### Function to detect and apply mask if the ROI of reference image matches with the frame data passed
+    #### Function to detect and apply mask if the ROI of reference image matches with the referenece frame passed
     '''
     ### Empirical values
-    taskbar_height = 40
-    match_width = 50
+
     estimate_color_col_start = 400
     estimate_color_col_end =-40
     
@@ -50,12 +63,13 @@ def detectTaskbarAndApplyMask(frame, ref_taskbar_image):
 
     if abs(cum_error) < 1:
         # Taskbar is detected
-        estimated_color = np.average(
-            np.average(frame[estimate_color_col_start:estimate_color_col_end,
-                             :match_width,:], axis=0), axis=0).astype('uint8')
+        # estimated_color = np.average(
+        #     np.average(frame[estimate_color_col_start:estimate_color_col_end,
+        #                      :match_width,:], axis=0), axis=0).astype('uint8')
         # estimated_color= stats.mode(stats.mode(frame[:,:match_width,:], axis=0),
         #                             axis=0)[0].astype('uint8')
         edited_frame = frame.copy()
+        estimated_color=[128, 128, 128] #RGB
         edited_frame[-taskbar_height:,:,0] = estimated_color[0]
         edited_frame[-taskbar_height:,:,1] = estimated_color[1]
         edited_frame[-taskbar_height:,:,2] = estimated_color[2]
@@ -69,17 +83,24 @@ ref_taskbar_image = cv2.cvtColor(cv2.imread(ref_taskbar_img_path), cv2.COLOR_BGR
 # Create a video capture object, in this case we are reading the video from a file
 vid_capture = VideoFileClip(input_video_path)
 audio_capture = AudioFileClip(input_video_path)
+# Set the audio to video
+vid_capture = vid_capture.set_audio(audio_capture)
 
-print(vid_capture.duration)
+print("Length of the video is {}, with fps = {}".format(vid_capture.duration, vid_capture.fps))
 fps = vid_capture.fps
+
+# Getting the subclip of the video that we want to work with
+start_time = np.clip(start_time, a_min=0, a_max=(vid_capture.duration))
+end_time = np.clip(end_time, a_min=0, a_max=(vid_capture.duration))
+print("Creating a clip from {} to {}".format(start_time, end_time))
+
+vid_capture = vid_capture.subclip(start_time, end_time)
 
 def maskBottomTaskbar(get_frame, t):
     frame = get_frame(t)
     return detectTaskbarAndApplyMask(frame, ref_taskbar_image)
 
 edited_video = vid_capture.fl(maskBottomTaskbar)
-
-edited_video = edited_video.set_audio(audio_capture)
 edited_video.write_videofile(output_video_path, codec = "libx264", fps=fps)
 
 vid_capture.close()
