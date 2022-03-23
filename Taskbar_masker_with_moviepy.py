@@ -23,19 +23,20 @@ from moviepy.editor import AudioFileClip
 
 ## User parameters
 # TODO: Make this a arg-parser or similar
+
 # For test 1
-# input_video_path = 'Sample_video/zoom_0.mp4'
-# ref_taskbar_img_path = 'Sample_video/Taskbar_ref.JPG'
-# output_video_path = 'Sample_video/moviepy_edited_video.mp4'
+# input_video_path = 'test_video_1/zoom_0.mp4'
+# ref_taskbar_img_path = 'test_video_1/Taskbar_ref.JPG'
+# output_video_path = 'test_video_1/moviepy_edited_video.mp4'
 # start_time = 120 # in seconds
 # end_time = 141 # in seconds
 # taskbar_height = 40 # in pixels
 # match_width = 50 # in pixels
 
 # For test 2
-input_video_path = 'Test2/orig_recording/video1482971547.mp4'
-ref_taskbar_img_path = 'Test2/orig_recording/ref_window_capture.png'
-output_video_path = 'Test2/edited_video.mp4'
+input_video_path = 'test_video_2/orig_recording/video1482971547.mp4'
+ref_taskbar_img_path = 'test_video_2/orig_recording/ref_window_capture.png'
+output_video_path = 'test_video_2/edited_video.mp4'
 start_time = 0 # in seconds
 end_time = 10**6 # in seconds
 taskbar_height = 60 # in pixels
