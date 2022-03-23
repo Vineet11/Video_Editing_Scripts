@@ -22,11 +22,16 @@ from moviepy.editor import AudioFileClip
 
 
 ## User parameters
+# TODO: Make this a arg-parser or similar
 input_video_path = 'Sample_video/zoom_0.mp4'
 ref_taskbar_img_path = 'Sample_video/Taskbar_ref.JPG'
+output_video_path = 'Sample_video/moviepy_edited_video.mp4'
 
 ## Function to detect mask
 def detectTaskbarAndApplyMask(frame, ref_taskbar_image):
+    '''
+    #### Function to detect and apply mask if the ROI of reference image matches with the frame data passed
+    '''
     ### Empirical values
     taskbar_height = 40
     match_width = 50
@@ -59,10 +64,11 @@ def detectTaskbarAndApplyMask(frame, ref_taskbar_image):
     return edited_frame
 
 # Load the reference file
-ref_taskbar_image = cv2.cvtColor(cv2.imread('Sample_video/Taskbar_ref.JPG'), cv2.COLOR_BGR2RGB)
+ref_taskbar_image = cv2.cvtColor(cv2.imread(ref_taskbar_img_path), cv2.COLOR_BGR2RGB)
+
 # Create a video capture object, in this case we are reading the video from a file
-vid_capture = VideoFileClip('Sample_video/zoom_0.mp4')
-audio_capture = AudioFileClip('Sample_video/zoom_0.mp4')
+vid_capture = VideoFileClip(input_video_path)
+audio_capture = AudioFileClip(input_video_path)
 
 print(vid_capture.duration)
 fps = vid_capture.fps
@@ -74,7 +80,7 @@ def maskBottomTaskbar(get_frame, t):
 edited_video = vid_capture.fl(maskBottomTaskbar)
 
 edited_video = edited_video.set_audio(audio_capture)
-edited_video.write_videofile('Sample_video/moviepy_edited_video.mp4', codec = "libx264", fps=fps)
+edited_video.write_videofile(output_video_path, codec = "libx264", fps=fps)
 
 vid_capture.close()
 audio_capture.close()
