@@ -1,0 +1,1 @@
+python video_editor_with_moviepy.py --input_video_path "test_video_2/orig_recording/video1482971547.mp4" --ref_image_path "test_video_2/orig_recording/ref_window_capture_from_video.png" --taskbar_height=60 --match_width=75
