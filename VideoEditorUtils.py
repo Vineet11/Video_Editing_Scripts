@@ -3,6 +3,7 @@
 # Compare this with every frame in the video only for a box 
 # where taskbar is expected to appear.
 
+from time import time
 from typing import Any
 import cv2
 import numpy as np
@@ -36,44 +37,88 @@ def getReferenceImage(video_capture, time_s, image_path):
         ref_taskbar_image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
     return ref_taskbar_image
 
+def write_RGBImage(image, outPath):
+    ''' We generally get image as RGB from the video. jpg or png uses BGR format.'''
+    cv2.imwrite(outPath, cv2.cvtColor(image,cv2.COLOR_RGB2BGR))
+
 ### Video editor helper functions
 
+## Matching functions
+
+# get average sum of absolute difference (avg_SAD) value between the ref and target
+def loss_SAD(ref, target):
+    # Assuming 3 channel input. Averaging over all 3 channels.
+    diff = ref.astype('float64') - target.astype('float64')
+    diff_img_signed = np.absolute(diff)/2
+
+    #cv2.imshow('Target',target)
+    #cv2.imshow('Difference image',diff_img)
+    #diff_img = np.clip(diff_img_signed + 128, 0, 255).astype('uint8')
+    return np.average(diff_img_signed)
+
+def detect_SAD(loss, th):
+    # For SAD, score less than threshold indicates a match
+    return True if loss<=th else False
+
+# get Structure similarity index (SSIM) value between the ref and target
+from skimage.metrics import structural_similarity
+def loss_SSIM(ref, target):
+    # Assuming 3 channel input. Calling SSIM on all 3 channels.
+    return structural_similarity(ref , target, multichannel=True, gaussian_weights=True, data_range=255)
+
+def detect_SSIM(loss, th):
+    # For SSIM, score greater than threshold indicates a match
+    return True if loss>=th else False
+
+def configure_loss_detect_fn(args):
+    if args.detection_criterion == "SAD":
+        return loss_SAD, detect_SAD
+    elif args.detection_criterion == "SSIM":
+        return loss_SSIM, detect_SSIM
+
 ## Function to detect mask
-def detectTaskbarAndApplyMask(frame, ref_taskbar_image, args):
+def detectTaskbarAndApplyMask(frame, ref_taskbar_image, loss_fn, detect_fn, args):
     '''
     #### Function to detect and apply mask if the ROI of reference image matches with the referenece frame passed
     '''
     ### Empirical values
-    taskbar_height = args.taskbar_height
+    match_height = args.taskbar_height
     match_width = args.match_width
     mask_offset = args.mask_offset
-    detection_th = args.detection_th
-    mask_color = args.mask_color
-    #print(args.mask_color)
-    diff = frame[-taskbar_height:,:match_width,:].astype('float64') - \
-        ref_taskbar_image[-taskbar_height:,:match_width,:].astype('float64')
+    margin_left = args.margin_left
+    margin_right = args.margin_right
+    margin_bottom = args.margin_bottom
+    # Slice configuration for matching
+    col_start = margin_left
+    col_end   =  col_start + match_width
+    patch_col_slice = slice(col_start,col_end)
+    # Negative indexing for row
+    row_end   = None if margin_bottom is None else -margin_bottom
+    row_start = - match_height if row_end is None else row_end - match_height
+    patch_row_slice = slice(row_start, row_end)
 
-    ### Logic 1: This logic has a potential problem when the frame gets all zero values
-    #diff_img_signed = np.clip(np.floor(np.absolute(diff)/2), -128, 128)
-    # Estimate match between the ref
-    #cum_error = np.average(diff_img_signed)
+    # Patch extraction for matching
+    ref_patch = ref_taskbar_image[patch_row_slice, patch_col_slice,:]
+    target_patch = frame[patch_row_slice, patch_col_slice,:]
+    
+    # Slice configuration for masking
+    col_end   =  None if margin_right is None else -margin_right
+    row_start -= mask_offset
+    mask_col_slice = slice(col_start,col_end)
+    mask_row_slice = slice(row_start, row_end)
 
-    ### Logic 2: Use abs value of the diff image. Will be more robust for corner cases
-    diff_img_signed = np.absolute(diff)/2
-    cum_error = np.average(diff_img_signed)
+    loss = loss_fn(ref_patch, target_patch)
     ## Debug prints
     if debug_print:
-        print("cum error is ", cum_error)
+        print("Match error is ", loss)
 
-    #cv2.imshow('Frame',frame)
-    #cv2.imshow('Difference image',diff_img)
-    #diff_img = np.clip(diff_img_signed + 128, 0, 255).astype('uint8')
-    if abs(cum_error) < detection_th:
+    if detect_fn(loss, args.detection_th):
         edited_frame = frame.copy()
         # estimated_color=[241, 241, 241] #RGB # Mask color of windows taskbar
-        edited_frame[-taskbar_height-mask_offset:,:,0] = mask_color[0]
-        edited_frame[-taskbar_height-mask_offset:,:,1] = mask_color[1]
-        edited_frame[-taskbar_height-mask_offset:,:,2] = mask_color[2]
+        mask_color = args.mask_color
+        edited_frame[mask_row_slice, mask_col_slice, 0] = mask_color[0]
+        edited_frame[mask_row_slice, mask_col_slice, 1] = mask_color[1]
+        edited_frame[mask_row_slice, mask_col_slice, 2] = mask_color[2]
     else:
         edited_frame = frame
     return edited_frame
@@ -84,31 +129,38 @@ def reconfigureArgs(args):
     # OS dependent default parameters. Can be overwritten if passed by user
     if args.input_video_OS == 10:
         args.mask_offset = assignValue(args.mask_offset, 0)
-        args.mask_border_left = assignValue(args.mask_border_left, 0)
-        args.mask_border_right = assignValue(args.mask_border_right, None)
+        args.margin_left = assignValue(args.margin_left, 0)
+        args.margin_right = assignValue(args.margin_right, None)
     elif args.input_video_OS == 7:
         args.mask_offset = assignValue(args.mask_offset, 8)
-        args.mask_border_left = assignValue(args.mask_border_left, 43)
-        args.mask_border_right = assignValue(args.mask_border_right, -45)
+        args.margin_left = assignValue(args.margin_left, 43)
+        args.margin_right = assignValue(args.margin_right, -45)
 
     # Time parameters will be passed as strings in the format HH:MM:SS or MM:SS or SS
+    # Convert them to seconds
     args.reference_frame_time = getTime(args.reference_frame_time)
     args.start_time = getTime(args.start_time)
     args.end_time = getTime(args.end_time)
-    # Convert them to seconds
-    # TODO: Convert all time args to seconds
+
+    # Default detection threshold will change based on detection criterion
+    if args.detection_criterion == "SAD":
+        args.detection_th = assignValue(args.detection_th, 1)
+    elif args.detection_criterion == "SSIM":
+        args.detection_th = assignValue(args.detection_th, 0.9)
+
     # Reassign edited args
     return args
 
 def maskBottomTaskbar(get_frame, t, ref_taskbar_image, args):
     if debug_print:
         print("Procssing time ={}".format(t))
-    return detectTaskbarAndApplyMask(frame=get_frame(t), ref_taskbar_image=ref_taskbar_image, args=args)
+    loss_fn, detect_fn = configure_loss_detect_fn(args=args)
+    return detectTaskbarAndApplyMask(frame=get_frame(t), ref_taskbar_image=ref_taskbar_image, loss_fn=loss_fn, detect_fn=detect_fn, args=args)
 
 def VideoEditor_v10(args):
     # Modify default values of some of the arguments based on input arguments
     args = reconfigureArgs(args)
-
+    globals()["debug_print"] = args.debug_prints
     ### Create a video capture object, in this case we are reading the video from a file
     input_video_path = args.input_video_path
     # moviepy video object
@@ -149,9 +201,54 @@ def VideoEditor_v10(args):
         audio_capture.close()
     edited_video.close()
 
+def Calibrate(args):
+    ### Create a video capture object, in this case we are reading the video from a file
+    input_video_path = args.input_video_path
+    # moviepy video object
+    vid_capture = VideoFileClip(input_video_path)
+
+    ### Get the reference image
+    ref_taskbar_image = getReferenceImage(vid_capture, args.reference_frame_time, args.ref_image_path)
+    # Write the reference file
+    input_video_path = args.input_video_path
+    out_img_path = input_video_path[:-4] + args.mode + ".png"
+    write_RGBImage(image=ref_taskbar_image, outPath=out_img_path)
+    print("Creating image for parameter calibration at {}".format(out_img_path))
+    vid_capture.close()
+
+def Profile():
+    # Run profiling of detection criterion on the given system
+    # Run 1000,1000,3 image for 10k iterations and report the time
+    import time
+    input_size = (100,100,3)
+    input_data_1 = np.random.randint(0,256, input_size)
+    input_data_2 = np.random.randint(0,256, input_size)
+    iterations = 10000
+    print("#### Begin Profiling ####")
+    print("reporting profiler data for input size ={}, iterations = {}".format(input_size, iterations))
+    t_start = time.time()
+    for i in range(iterations):
+        _ = loss_SAD(input_data_1, input_data_2)
+    t_end = time.time()
+    print("SAD criterion took {} seconds to run".format(t_end-t_start))
+
+    t_start = time.time()
+    for i in range(iterations):
+        _ = loss_SSIM(input_data_1, input_data_2)
+    t_end = time.time()
+    print("SSIM criterion took {} seconds to run".format(t_end-t_start))
+    print("#### Profiling complete ####")
+
+
 def VideoEditor(args, version=1.0):
     if version==1.0:
-        VideoEditor_v10(args=args)
+        if args.mode == "editing":
+            VideoEditor_v10(args=args)
+        elif args.mode == "calibration":
+            Calibrate(args)
+        elif args.mode == "profile":
+            Profile()
+
 
 if __name__=="__main__":
     print('Testing utils')
