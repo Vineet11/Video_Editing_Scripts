@@ -12,7 +12,7 @@ from scipy import stats
 from moviepy.editor import VideoFileClip
 from moviepy.editor import AudioFileClip
 
-debug_print = False
+debug_print = True
 force_attach_audio = False
 
 # Configure args parameters by using the user arguments.
@@ -64,48 +64,74 @@ def detect_SAD(loss, th):
 from skimage.metrics import structural_similarity
 def loss_SSIM(ref, target):
     # Assuming 3 channel input. Calling SSIM on all 3 channels.
-    return structural_similarity(ref , target, multichannel=True, gaussian_weights=True, data_range=255)
+    return structural_similarity(ref , target, multichannel=True, data_range=255, gaussian_weights=False, win_size=3)
 
 def detect_SSIM(loss, th):
     # For SSIM, score greater than threshold indicates a match
     return True if loss>=th else False
 
-def configure_loss_detect_fn(args):
-    if args.detection_criterion == "SAD":
+def configure_loss_detect_fn(detection_criterion):
+    if detection_criterion == "SAD":
         return loss_SAD, detect_SAD
-    elif args.detection_criterion == "SSIM":
+    elif detection_criterion == "SSIM":
         return loss_SSIM, detect_SSIM
 
-## Function to detect mask
-def detectTaskbarAndApplyMask(frame, ref_taskbar_image, loss_fn, detect_fn, args):
-    '''
-    #### Function to detect and apply mask if the ROI of reference image matches with the referenece frame passed
-    '''
-    ### Empirical values
+def configure_filter_fn(filter, filter_size):
+    if filter is None: #Identity or no filter
+        return lambda image: image
+    if filter == "median": #Median filter. For salt-pepper noise
+        # Convert RGB to grey channel
+        def run_median_filter(image, filter_size):
+            if image.shape[2]==3:
+                image = cv2.cvtColor(image,cv2.COLOR_RGB2GRAY)
+            return cv2.medianBlur(image, ksize=filter_size)
+        return lambda image: run_median_filter(image, filter_size)
+
+def configure_patch_and_mask_slices(args):
+    # Configure the ROIs for patch to be match and patch to be masked
+    ### Empirical values passed as args
     match_height = args.taskbar_height
     match_width = args.match_width
     mask_offset = args.mask_offset
     margin_left = args.margin_left
     margin_right = args.margin_right
     margin_bottom = args.margin_bottom
+
     # Slice configuration for matching
     col_start = margin_left
     col_end   =  col_start + match_width
-    patch_col_slice = slice(col_start,col_end)
+    patch_slice_col = slice(col_start,col_end)
     # Negative indexing for row
     row_end   = None if margin_bottom is None else -margin_bottom
     row_start = - match_height if row_end is None else row_end - match_height
-    patch_row_slice = slice(row_start, row_end)
+    patch_slice_row = slice(row_start, row_end)
 
-    # Patch extraction for matching
-    ref_patch = ref_taskbar_image[patch_row_slice, patch_col_slice,:]
-    target_patch = frame[patch_row_slice, patch_col_slice,:]
-    
     # Slice configuration for masking
     col_end   =  None if margin_right is None else -margin_right
     row_start -= mask_offset
-    mask_col_slice = slice(col_start,col_end)
-    mask_row_slice = slice(row_start, row_end)
+    mask_slice_col = slice(col_start,col_end)
+    mask_slice_row = slice(row_start, row_end)
+
+    return (patch_slice_row, patch_slice_col), (mask_slice_row, mask_slice_col)
+
+## Function to detect mask
+def detectTaskbarAndApplyMask(
+    frame, ref_taskbar_image,
+    patch_slice, mask_slice,
+    filter_fn, loss_fn, detect_fn,
+    args):
+    '''
+    #### Function to detect and apply mask if the ROI of reference image matches with the referenece frame passed
+    '''
+
+    patch_slice_row, patch_slice_col = patch_slice
+    mask_slice_row, mask_slice_col = mask_slice
+
+    # Patch extraction for matching
+    ref_patch = ref_taskbar_image
+    target_patch = frame[patch_slice_row, patch_slice_col,:]
+    # Apply filter on input frame. Assumed that reference is already cropped and filtered .
+    target_patch = filter_fn(target_patch)
 
     loss = loss_fn(ref_patch, target_patch)
     ## Debug prints
@@ -116,9 +142,9 @@ def detectTaskbarAndApplyMask(frame, ref_taskbar_image, loss_fn, detect_fn, args
         edited_frame = frame.copy()
         # estimated_color=[241, 241, 241] #RGB # Mask color of windows taskbar
         mask_color = args.mask_color
-        edited_frame[mask_row_slice, mask_col_slice, 0] = mask_color[0]
-        edited_frame[mask_row_slice, mask_col_slice, 1] = mask_color[1]
-        edited_frame[mask_row_slice, mask_col_slice, 2] = mask_color[2]
+        edited_frame[mask_slice_row, mask_slice_col, 0] = mask_color[0]
+        edited_frame[mask_slice_row, mask_slice_col, 1] = mask_color[1]
+        edited_frame[mask_slice_row, mask_slice_col, 2] = mask_color[2]
     else:
         edited_frame = frame
     return edited_frame
@@ -151,11 +177,18 @@ def reconfigureArgs(args):
     # Reassign edited args
     return args
 
-def maskBottomTaskbar(get_frame, t, ref_taskbar_image, args):
+def maskBottomTaskbar(
+    get_frame, t, ref_taskbar_image,
+    patch_slice, mask_slice,
+    filter_fn, loss_fn, detect_fn,
+    args):
     if debug_print:
         print("Procssing time ={}".format(t))
-    loss_fn, detect_fn = configure_loss_detect_fn(args=args)
-    return detectTaskbarAndApplyMask(frame=get_frame(t), ref_taskbar_image=ref_taskbar_image, loss_fn=loss_fn, detect_fn=detect_fn, args=args)
+    return detectTaskbarAndApplyMask(
+        get_frame(t), ref_taskbar_image,
+        patch_slice, mask_slice,
+        filter_fn, loss_fn, detect_fn,
+        args)
 
 def VideoEditor_v10(args):
     # Modify default values of some of the arguments based on input arguments
@@ -190,10 +223,25 @@ def VideoEditor_v10(args):
     output_video_path = input_video_path[:-4]+"_edited_{}_{}".format(int(start_time), int(end_time))+ ".mp4"
     vid_capture = vid_capture.subclip(start_time, end_time)
 
+    # When using SAD as matching criterion, we can put a filter on image to address noise observed
+    # The filter is configured and already ran on reference image. In the run-time, run it only on input frame
+    patch_slice, mask_slice = configure_patch_and_mask_slices(args)
+    patch_slice_row, patch_slice_col = patch_slice
+    filter_fn = configure_filter_fn(args.filter, args.filter_size)
+    loss_fn, detect_fn = configure_loss_detect_fn(args.detection_criterion)
+
+    # Pre-processing step
+    ref_taskbar_image = filter_fn(ref_taskbar_image[patch_slice_row, patch_slice_col,:])
+
     # This calls the passed function on every frame.
     # fl function requires the signature get_frame, t. 
-    # We are using the lambda function to call required function using fl
-    edited_video = vid_capture.fl(lambda get_frame, t: maskBottomTaskbar(get_frame, t, ref_taskbar_image, args))
+    # Using the lambda function to call required function using fl
+    fl_fn = lambda get_frame, t: maskBottomTaskbar(
+        get_frame, t, ref_taskbar_image,
+        patch_slice, mask_slice,
+        filter_fn, loss_fn, detect_fn,
+        args)
+    edited_video = vid_capture.fl(fl_fn)
     edited_video.write_videofile(output_video_path, codec = "libx264", fps=fps)
 
     vid_capture.close()
@@ -219,28 +267,36 @@ def Calibrate(args):
 def Profile():
     # Run profiling of detection criterion on the given system
     # Run 1000,1000,3 image for 10k iterations and report the time
-    import time
     input_size = (100,100,3)
-    input_data_1 = np.random.randint(0,256, input_size)
-    input_data_2 = np.random.randint(0,256, input_size)
+    input_data_1 = np.random.randint(0,256, input_size).astype("float32")
+    input_data_2 = np.random.randint(0,256, input_size).astype("float32")
     iterations = 10000
     print("#### Begin Profiling ####")
     print("reporting profiler data for input size ={}, iterations = {}".format(input_size, iterations))
-    t_start = time.time()
+    t_start = time()
     for i in range(iterations):
         _ = loss_SAD(input_data_1, input_data_2)
-    t_end = time.time()
+    t_end = time()
     print("SAD criterion took {} seconds to run".format(t_end-t_start))
 
-    t_start = time.time()
+    t_start = time()
+    filter_fn = configure_filter_fn("median", 3)
+    for i in range(iterations):
+        filter_fn(input_data_1)
+        _ = loss_SAD(input_data_1, input_data_2)
+    t_end = time()
+    print("SAD criterion + median filter took {} seconds to run".format(t_end-t_start))
+
+    t_start = time()
     for i in range(iterations):
         _ = loss_SSIM(input_data_1, input_data_2)
-    t_end = time.time()
+    t_end = time()
     print("SSIM criterion took {} seconds to run".format(t_end-t_start))
     print("#### Profiling complete ####")
 
 
 def VideoEditor(args, version=1.0):
+    vid_editor_t_start = time()
     if version==1.0:
         if args.mode == "editing":
             VideoEditor_v10(args=args)
@@ -248,6 +304,8 @@ def VideoEditor(args, version=1.0):
             Calibrate(args)
         elif args.mode == "profile":
             Profile()
+    vid_editor_t_end = time()
+    print("Video editor took {} seconds to run".format(vid_editor_t_end-vid_editor_t_start))
 
 
 if __name__=="__main__":

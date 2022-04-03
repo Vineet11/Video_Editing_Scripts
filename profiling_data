@@ -1,0 +1,34 @@
+
+THREE CHANNEL INPUT
+Gaussian
+#### Begin Profiling ####
+reporting profiler data for input size =(100, 100, 3), iterations = 10000
+SAD criterion took 0.7361416816711426 seconds to run
+SAD criterion + median filter on 3 channels took 1.0356061458587646 seconds to run
+SAD criterion + median filter with RGB2GRAY took 0.9147253036499023 seconds to run
+SAD criterion + median filter on 5 channels took 1.7829780578613281 seconds to run
+
+SSIM criterion took 21.68997025489807 seconds to run
+#### Profiling complete ####
+
+win_size=3
+#### Begin Profiling ####
+reporting profiler data for input size =(100, 100, 3), iterations = 10000
+SAD criterion took 0.7248890399932861 seconds to run
+SSIM criterion took 12.076027393341064 seconds to run
+#### Profiling complete ####
+
+SINGLE CHANNEL INPUT
+Gaussian
+#### Begin Profiling ####
+reporting profiler data for input size =(100, 100, 1), iterations = 10000
+SAD criterion took 0.2907118797302246 seconds to run
+SSIM criterion took 7.571247100830078 seconds to run
+#### Profiling complete ####
+
+win_size=3
+#### Begin Profiling ####
+reporting profiler data for input size =(100, 100, 1), iterations = 10000
+SAD criterion took 0.28638505935668945 seconds to run
+SSIM criterion took 3.832042694091797 seconds to run
+#### Profiling complete ####

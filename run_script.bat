@@ -1,3 +1,4 @@
 @REM python video_editor_with_moviepy.py --input_video_path "test_video_2/orig_recording/video1482971547.mp4" --ref_image_path "test_video_2/orig_recording/ref_window_capture_from_video.png" --taskbar_height=60 --match_width=75
-python edit_video.py --input_video_path "test_video_2/orig_recording/video1482971547.mp4" --reference_frame_time "35" --taskbar_height 60 --match_width 75 --start_time "0" --end_time "2:25" --detection_criterion="SSIM" --mask_offset=80 --debug_prints=False --mode="profile"
+python edit_video.py --input_video_path "test_video_2/orig_recording/video1482971547.mp4" --reference_frame_time "35" --taskbar_height 60 --match_width 75 --start_time "0" --end_time "2:25" --detection_criterion="SAD" --mask_offset=80 --filter="median" --debug_prints=True --mode="profile"
+@REM --debug_prints=False --mode="profile"
 @REM python video_editor_with_moviepy.py --input_video_path "test_video_1/zoom_0.mp4" --reference_frame_time_s 35

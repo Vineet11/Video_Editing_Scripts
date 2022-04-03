@@ -26,7 +26,9 @@ argParser.add_argument('--taskbar_height', type=int, default=40, help="")
 argParser.add_argument('--match_width', type=int, default=60, help="")
 
 argParser.add_argument('--detection_criterion', type=str, default="SAD", help="Algorithm used for match detection")
+argParser.add_argument('--filter', type=str, default=None, help="Filter applied on image before running detection criterion. Applicable for SAD")
 argParser.add_argument('--detection_th', type=float, default=None, help="")
+argParser.add_argument('--filter_size', type=int, default=3, help="")
 
 argParser.add_argument('--margin_left', type=int, default=None, help="")
 argParser.add_argument('--margin_right', type=int, default=None, help="")
@@ -34,7 +36,7 @@ argParser.add_argument('--margin_bottom', type=int, default=None, help="")
 argParser.add_argument('--mask_color', type=list, default=[241,241,241], help="")
 argParser.add_argument('--mask_offset', type=int, default=None, help="")
 argParser.add_argument('--ref_image_path', type=str, default='', help="Input path of reference image to match in the video")
-argParser.add_argument('--debug_prints', type=bool, default=False, help="")
+argParser.add_argument('--debug_prints', type=bool, default=True, help="")
 
 
 ## Parsing the args
